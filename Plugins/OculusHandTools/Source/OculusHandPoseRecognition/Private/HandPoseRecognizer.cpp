@@ -1,11 +1,11 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "HandPoseRecognizer.h"
 #include "OculusHandPoseRecognitionModule.h"
 #include <limits>
 
-UHandPoseRecognizer::UHandPoseRecognizer(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+UHandPoseRecognizer::UHandPoseRecognizer(const FObjectInitializer& ObjectInitializer):
+	Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = true;
 
@@ -31,7 +31,7 @@ void UHandPoseRecognizer::BeginPlay()
 	Super::BeginPlay();
 
 	// We decode the hand poses
-	for (int PatternIndex = 0; PatternIndex < Poses.Num(); ++PatternIndex)
+	for (auto PatternIndex = 0; PatternIndex < Poses.Num(); ++PatternIndex)
 	{
 		if (!Poses[PatternIndex].Decode())
 		{
@@ -42,19 +42,17 @@ void UHandPoseRecognizer::BeginPlay()
 	}
 }
 
-FRotator UHandPoseRecognizer::GetWristRotator(FQuat ComponentQuat)
+FRotator UHandPoseRecognizer::GetWristRotator(FQuat ComponentQuat) const
 {
-	FRotator ComponentRotator = ComponentQuat.Rotator();
+	auto ComponentRotator = ComponentQuat.Rotator();
 
-	UWorld* World = GetWorld();
-	if (!World)
-		return ComponentRotator;
+	auto const World = GetWorld();
+	if (!World) return ComponentRotator;
 
-	APlayerController* PlayerController = World->GetFirstPlayerController();
-	if (!PlayerController)
-		return ComponentRotator;
+	auto const PlayerController = World->GetFirstPlayerController();
+	if (!PlayerController) return ComponentRotator;
 
-	FRotator ComponentRotationToCamera = PlayerController->PlayerCameraManager->GetTransform().InverseTransformRotation(ComponentQuat).Rotator();
+	auto const ComponentRotationToCamera = PlayerController->PlayerCameraManager->GetTransform().InverseTransformRotation(ComponentQuat).Rotator();
 	ComponentRotator.Yaw = ComponentRotationToCamera.Yaw;
 
 	return ComponentRotator;
@@ -88,20 +86,20 @@ void UHandPoseRecognizer::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	Pose.UpdatePose(Side, GetWristRotator(GetComponentQuat()));
 
 	// Finding closest pattern
-	int ClosestHandPose = -1;
-	float ClosestHandPoseConfidence = DefaultConfidenceFloor;
-	float ClosestHandPoseError = std::numeric_limits<float>::max();
-	float HighestConfidence = 0.0f;
+	auto ClosestHandPose = -1;
+	auto ClosestHandPoseConfidence = DefaultConfidenceFloor;
+	auto ClosestHandPoseError = std::numeric_limits<float>::max();
+	auto HighestConfidence = 0.0f;
 
-	for (int PatternIndex = 0; PatternIndex < Poses.Num(); ++PatternIndex)
+	for (auto PatternIndex = 0; PatternIndex < Poses.Num(); ++PatternIndex)
 	{
 		// Skip patterns that are not for this side
 		if (Poses[PatternIndex].GetHandType() != Side)
 			continue;
 
 		// Computing confidence (we ignore the wrist yaw by default)
-		float RawError = 0.0f;
-		float Confidence = Poses[PatternIndex].ComputeConfidence(Pose, &RawError);
+		auto RawError = 0.0f;
+		auto const Confidence = Poses[PatternIndex].ComputeConfidence(Pose, &RawError);
 		// UE_LOG(LogHandPoseRecognition, Error, TEXT("%s confidence %0.0f raw error %0.0f"), *Poses[PatternIndex].PoseName, Confidence, RawError);
 
 		// We always record the smallest error, in case no pattern matches
@@ -158,11 +156,8 @@ bool UHandPoseRecognizer::GetRecognizedHandPose(int& Index, FString& Name, float
 		Name = Poses[Index].PoseName;
 		return true;
 	}
-	else
-	{
-		Name = TEXT("None");
-		return false;
-	}
+	Name = TEXT("None");
+	return false;
 }
 
 void UHandPoseRecognizer::LogEncodedHandPose()

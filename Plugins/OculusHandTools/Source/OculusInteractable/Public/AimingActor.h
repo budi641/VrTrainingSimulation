@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 

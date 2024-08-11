@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -76,8 +76,10 @@ public:
 	{
 		return FString::Format(
 			TEXT("Hand Pose Recorder is %srecording the %s"),
-			{ bIsRecording ? TEXT("") : TEXT("not "),
-				*UEnum::GetValueAsString(Recognizer->Side) });
+			{
+				bIsRecording ? TEXT("") : TEXT("not "),
+				*UEnum::GetValueAsString(Recognizer->Side)
+			});
 	}
 #endif
 
@@ -87,19 +89,19 @@ protected:
 		UE_LOG(LogHandPoseRecognition, Error, TEXT("Hand Pose Range Recorded #%d"), HandPoseRangeIndex++);
 
 		// Error at 0.5 (half full range) is the maximum error.
-		float TotalSquare0500Error = 0.0f;
-		float TotalSquare0250Error = 0.0f;
-		float TotalSquare0125Error = 0.0f;
+		auto TotalSquare0500Error = 0.0f;
+		auto TotalSquare0250Error = 0.0f;
+		auto TotalSquare0125Error = 0.0f;
 
-		for (int Bone = 0; Bone < RecognizedBone::NUM; ++Bone)
+		for (auto Bone = 0; Bone < NUM; ++Bone)
 		{
-			FRotator MinRot = MinPose.GetRotator(RecognizedBone(Bone));
-			FRotator MaxRot = MaxPose.GetRotator(RecognizedBone(Bone));
+			auto MinRot = MinPose.GetRotator((ERecognizedBone)Bone);
+			auto MaxRot = MaxPose.GetRotator((ERecognizedBone)Bone);
 
 			// Range is as large as 180 degrees.
-			float PitchRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Pitch, MinRot.Pitch));
-			float YawRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Yaw, MinRot.Yaw));
-			float RollRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Roll, MinRot.Roll));
+			auto PitchRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Pitch, MinRot.Pitch));
+			auto YawRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Yaw, MinRot.Yaw));
+			auto RollRange = FMath::Abs(FMath::FindDeltaAngleDegrees(MaxRot.Roll, MinRot.Roll));
 
 			// Max error is at most 180 degrees (0.5 * range).
 			TotalSquare0500Error += FMath::Square(0.500 * PitchRange) + FMath::Square(0.500 * YawRange) + FMath::Square(0.500 * RollRange);
@@ -107,7 +109,7 @@ protected:
 			TotalSquare0125Error += FMath::Square(0.125 * PitchRange) + FMath::Square(0.125 * YawRange) + FMath::Square(0.125 * RollRange);
 
 			UE_LOG(LogHandPoseRecognition, Warning, TEXT("%8s pitch %6.2f [%+7.2f .. %+7.2f]  yaw %6.2f [%+7.2f .. %+7.2f]  roll %6.2f [%+7.2f .. %+7.2f]"),
-				*UEnum::GetValueAsString(RecognizedBone(Bone)),
+				*UEnum::GetValueAsString((ERecognizedBone)Bone),
 				PitchRange, MinRot.Pitch, MaxRot.Pitch,
 				YawRange, MinRot.Yaw, MaxRot.Yaw,
 				RollRange, MinRot.Roll, MaxRot.Roll);
@@ -120,6 +122,6 @@ protected:
 
 private:
 	bool bIsRecording;
-	FHandPose MinPose, MaxPose;
+	FHandPose MinPose{}, MaxPose{};
 	int HandPoseRangeIndex;
 };

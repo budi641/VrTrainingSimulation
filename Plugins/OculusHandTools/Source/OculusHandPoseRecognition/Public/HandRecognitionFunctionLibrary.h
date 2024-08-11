@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -49,11 +49,13 @@ class OCULUSHANDPOSERECOGNITION_API UHandRecognitionFunctionLibrary : public UBl
 public:
 	/**
 	 * Waits for a hand pose to be recognized.
+	 * @param WorldContextObject - World context
 	 * @param HandPoseRecognizer - The hand pose recognizer component to wait on.
 	 * @param PoseMinDuration - The pose must be maintained for this amount of time to be recognized.
 	 * @param TimeToWait - The node will exit with TimeOut if no pose is recognized in this amount of time.  Use negative seconds to never time out.
 	 * @param PoseIndex - Recognized pose index.
 	 * @param PoseName - Recognized pose name.
+	 * @param LatentInfo - For latent node
 	 * @param OutExecs - Exit pins.
 	 */
 	UFUNCTION(BlueprintCallable, meta = (Latent, LatentInfo = "LatentInfo", WorldContext = "WorldContextObject", ExpandEnumAsExecs = "OutExecs", PoseMinDuration = "0", TimeToWait = "-1"), Category = "Hand Recognition")
@@ -67,12 +69,16 @@ public:
 
 	/**
 	 * Waits for a hand gesture to be recognized.
+	 * @param WorldContextObject - world context
 	 * @param HandGestureRecognizer - The hand gesture recognizer component to wait on.
 	 * @param TimeToWait - The node will exit with TimeOut if no gesture is recognized in this amount of time.  Use negative seconds to never time out.
 	 * @param Behavior - Auto-reset of the behavior returned.
 	 * @param GestureIndex - Recognized gesture index.
 	 * @param GestureName - Recognized gesture name.
 	 * @param GestureDirection - Recognized gesture direction.
+	 * @param GestureOuterDuration - Recognized outer gesture duration
+	 * @param GestureInnerDuration - Recognized inner gesture duration
+	 * @param LatentInfo - for latent node
 	 * @param OutExecs - Exit pins.
 	 */
 	UFUNCTION(BlueprintCallable, meta = (Latent, LatentInfo = "LatentInfo", WorldContext = "WorldContextObject", ExpandEnumAsExecs = "OutExecs", PoseMinDuration = "0", TimeToWait = "-1"), Category = "Hand Recognition")
@@ -86,9 +92,11 @@ public:
 
 	/**
 	 * Records the range of hand pose to be recognized.
+	 * @param WorldContextObject - World context
 	 * @param Recognizer - HandPoseRecognizer used for hand side and wrist information.
 	 * @param InExecs - Entry pins.
 	 * @param OutExecs - Exit pins.
+	 * @param LatentInfo - For latent node
 	 */
 	UFUNCTION(BlueprintCallable, meta = (Latent, LatentInfo = "LatentInfo", WorldContext = "WorldContextObject", ExpandEnumAsExecs = "InExecs,OutExecs"), Category = "Hand Recognition")
 	static void RecordHandPose(UObject* WorldContextObject, UHandPoseRecognizer* Recognizer, const ERecordHandPoseEntryType& InExecs, ERecordHandPoseExitType& OutExecs, FLatentActionInfo LatentInfo);

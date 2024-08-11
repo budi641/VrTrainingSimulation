@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "HandRecognitionFunctionLibrary.h"
 #include "Engine.h"
@@ -14,10 +14,10 @@ void UHandRecognitionFunctionLibrary::WaitForHandPose(
 	int& PoseIndex, FString& PoseName,
 	FLatentActionInfo LatentInfo)
 {
-	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
+	if (auto World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
-		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
-		if (LatentActionManager.FindExistingAction<FWaitForHandPoseAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == NULL)
+		auto& LatentActionManager = World->GetLatentActionManager();
+		if (LatentActionManager.FindExistingAction<FWaitForHandPoseAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == nullptr)
 		{
 			LatentActionManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID,
 				new FWaitForHandPoseAction(LatentInfo, HandPoseRecognizer, PoseMinDuration, TimeToWait, &PoseIndex, &PoseName, &OutExecs));
@@ -33,10 +33,10 @@ void UHandRecognitionFunctionLibrary::WaitForHandGesture(
 	int& GestureIndex, FString& GestureName, FVector& GestureDirection, float& GestureOuterDuration, float& GestureInnerDuration,
 	FLatentActionInfo LatentInfo)
 {
-	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
+	if (auto World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
-		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
-		if (LatentActionManager.FindExistingAction<FWaitForHandGestureAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == NULL)
+		auto& LatentActionManager = World->GetLatentActionManager();
+		if (LatentActionManager.FindExistingAction<FWaitForHandGestureAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == nullptr)
 		{
 			LatentActionManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID,
 				new FWaitForHandGestureAction(LatentInfo, HandGestureRecognizer, TimeToWait, Behavior, &GestureIndex, &GestureName, &GestureDirection, &GestureOuterDuration, &GestureInnerDuration, &OutExecs));
@@ -46,10 +46,10 @@ void UHandRecognitionFunctionLibrary::WaitForHandGesture(
 
 void UHandRecognitionFunctionLibrary::RecordHandPose(UObject* WorldContextObject, UHandPoseRecognizer* Recognizer, const ERecordHandPoseEntryType& InExecs, ERecordHandPoseExitType& OutExecs, FLatentActionInfo LatentInfo)
 {
-	if (UWorld* World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
+	if (auto World = GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull))
 	{
-		FLatentActionManager& LatentActionManager = World->GetLatentActionManager();
-		if (LatentActionManager.FindExistingAction<FRecordHandPoseAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == NULL)
+		auto& LatentActionManager = World->GetLatentActionManager();
+		if (LatentActionManager.FindExistingAction<FRecordHandPoseAction>(LatentInfo.CallbackTarget, LatentInfo.UUID) == nullptr)
 		{
 			LatentActionManager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID, new FRecordHandPoseAction(LatentInfo, Recognizer, &InExecs, &OutExecs));
 		}

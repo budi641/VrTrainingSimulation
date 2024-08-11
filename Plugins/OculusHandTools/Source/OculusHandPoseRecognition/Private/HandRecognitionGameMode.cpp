@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "HandRecognitionGameMode.h"
 #include "OculusHandPoseRecognitionModule.h"
@@ -10,21 +10,21 @@ int AHandRecognitionGameMode::LoggedIndex = 0;
 
 void AHandRecognitionGameMode::LogHandPose(FString Side)
 {
-	UWorld* World = GetWorld();
+	auto const World = GetWorld();
 	if (!World)
 	{
 		UE_LOG(LogHandPoseRecognition, Error, TEXT("LogHandPose failed to find a valid world."));
 		return;
 	}
 
-	APlayerController* Controller = World->GetFirstPlayerController();
+	auto const Controller = World->GetFirstPlayerController();
 	if (!Controller)
 	{
 		UE_LOG(LogHandPoseRecognition, Error, TEXT("LogHandPose failed to find a player controller."));
 		return;
 	}
 
-	APawn* Pawn = Controller->GetPawn();
+	auto const Pawn = Controller->GetPawn();
 	if (!Pawn)
 	{
 		UE_LOG(LogHandPoseRecognition, Error, TEXT("LogHandPose failed to find a pawn."));
@@ -32,7 +32,7 @@ void AHandRecognitionGameMode::LogHandPose(FString Side)
 	}
 
 	// We use the first matching OculusHandComponent.
-	EOculusXRHandType HandType = EOculusXRHandType::None;
+	auto HandType = EOculusXRHandType::None;
 	if (Side.Equals(TEXT("left"), ESearchCase::IgnoreCase))
 		HandType = EOculusXRHandType::HandLeft;
 	else if (Side.Equals(TEXT("right"), ESearchCase::IgnoreCase))
@@ -46,7 +46,7 @@ void AHandRecognitionGameMode::LogHandPose(FString Side)
 
 	TArray<UOculusXRHandComponent*> OculusHandComponents;
 	Pawn->GetComponents(OculusHandComponents);
-	for (UOculusXRHandComponent* HandComponent : OculusHandComponents)
+	for (auto HandComponent : OculusHandComponents)
 	{
 		if (HandComponent->SkeletonType == HandType)
 		{

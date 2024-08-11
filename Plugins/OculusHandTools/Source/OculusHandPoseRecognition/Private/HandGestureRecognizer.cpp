@@ -1,11 +1,11 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "HandGestureRecognizer.h"
 #include "OculusHandPoseRecognitionModule.h"
 #include "Kismet/GameplayStatics.h"
 
-UHandGestureRecognizer::UHandGestureRecognizer(const FObjectInitializer& ObjectInitializer /* = FObjectInitializer::Get() */)
-	: Super(ObjectInitializer)
+UHandGestureRecognizer::UHandGestureRecognizer(const FObjectInitializer& ObjectInitializer /* = FObjectInitializer::Get() */):
+	Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	RecognitionInterval = 0.0f;
@@ -29,7 +29,7 @@ void UHandGestureRecognizer::BeginPlay()
 		HandPoseRecognizer = Cast<UHandPoseRecognizer>(Parents[0]);
 	}
 
-	bool TurnOffGestureRecognition = false;
+	auto TurnOffGestureRecognition = false;
 	if (!HandPoseRecognizer)
 	{
 		UE_LOG(LogHandPoseRecognition, Error, TEXT("UHandGestureRecognizer called %s MUST be attached to a UHandPoseRecognizer not a %s."),
@@ -51,7 +51,7 @@ void UHandGestureRecognizer::BeginPlay()
 	}
 
 	// We decode the hand gestures
-	for (int GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
+	for (auto GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
 	{
 		if (!Gestures[GestureIndex].ProcessEncodedGestureString(HandPoseRecognizer))
 		{
@@ -64,8 +64,7 @@ void UHandGestureRecognizer::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!HandPoseRecognizer)
-		return;
+	if (!HandPoseRecognizer) return;
 
 	// Recognition is throttled
 	TimeSinceLastRecognition += DeltaTime;
@@ -90,9 +89,9 @@ void UHandGestureRecognizer::TickComponent(float DeltaTime, ELevelTick TickType,
 	SkippedFramesSinceLastRecognition = 0;
 
 	// We need the current game time for recognizing the transition time between the first and last poses.
-	UWorld* World = GetWorld();
+	auto const World = GetWorld();
 	check(World != nullptr);
-	float CurrentTime = UGameplayStatics::GetTimeSeconds(World);
+	auto const CurrentTime = UGameplayStatics::GetTimeSeconds(World);
 
 	// Currently recognized hand pose
 	int PoseIndex;
@@ -100,18 +99,18 @@ void UHandGestureRecognizer::TickComponent(float DeltaTime, ELevelTick TickType,
 	float PoseDuration;
 	float PoseError;
 	float PoseConfidence;
-	bool PoseRecognized = HandPoseRecognizer->GetRecognizedHandPose(PoseIndex, PoseName, PoseDuration, PoseError, PoseConfidence);
+	HandPoseRecognizer->GetRecognizedHandPose(PoseIndex, PoseName, PoseDuration, PoseError, PoseConfidence);
 
 	// By getting the relative location this way we have:
 	// X+ is forward, Y+ is right, Z+ is up
-	FVector ActorRelativeLocation = GetComponentTransform().GetRelativeTransform(GetOwner()->GetTransform()).GetLocation();
+	auto const ActorRelativeLocation = GetComponentTransform().GetRelativeTransform(GetOwner()->GetTransform()).GetLocation();
 
 	// We process all hand gestures
 	CompletedGestures.Reset();
 
-	for (int GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
+	for (auto GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
 	{
-		if (Gestures[GestureIndex].Step(PoseIndex, PoseDuration, DeltaTime, CurrentTime, ActorRelativeLocation, HandPoseRecognizer->GetCurrentPose()))
+		if (Gestures[GestureIndex].Step(PoseIndex, PoseDuration, DeltaTime, CurrentTime, ActorRelativeLocation))
 		{
 			CompletedGestures.Push(GestureIndex);
 		}
@@ -183,7 +182,7 @@ void UHandGestureRecognizer::ResetHandGesture(int& Index)
 
 void UHandGestureRecognizer::ResetAllHandGestures()
 {
-	for (FHandGesture& Gesture : Gestures)
+	for (auto& Gesture : Gestures)
 	{
 		Gesture.Reset();
 	}
@@ -193,7 +192,7 @@ void UHandGestureRecognizer::DumpAllGestureStates() const
 {
 	UE_LOG(LogHandPoseRecognition, Warning, TEXT("Gesture states for %s"), *GetName());
 
-	for (int GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
+	for (auto GestureIndex = 0; GestureIndex < Gestures.Num(); ++GestureIndex)
 	{
 		Gestures[GestureIndex].DumpGestureState(GestureIndex, HandPoseRecognizer);
 	}

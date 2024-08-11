@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -58,7 +58,7 @@ enum class EGestureStrengthBoneAngle : uint8
 
 /**
  * Actor component that recognizes gestures (i.e. poses over time).
- *
+ * 
  * @warning Must be attached to a UHandPoseRecognizer.
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))

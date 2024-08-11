@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -14,7 +14,7 @@
  *
  * @warning Must be attached to a component that moves with hands.
  */
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class OCULUSHANDPOSERECOGNITION_API UHandPoseRecognizer : public USceneComponent
 {
 	GENERATED_BODY()
@@ -86,7 +86,7 @@ protected:
 	 * @param ComponentQuat - Quaternion representing the controller rotation.
 	 * @return The adjusted rotator.
 	 */
-	FRotator GetWristRotator(FQuat ComponentQuat);
+	FRotator GetWristRotator(FQuat ComponentQuat) const;
 
 private:
 	/** Recognition state. */

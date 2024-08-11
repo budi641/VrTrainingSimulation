@@ -1,86 +1,13 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "HandGesture.h"
 #include "OculusHandPoseRecognitionModule.h"
 #include "HandPoseRecognizer.h"
 #include "Misc/Char.h"
 
-namespace // local
-{
-	int FindPoseIndex(UHandPoseRecognizer* Recognizer, const FString& PoseName)
-	{
-		for (int PoseIndex = 0; PoseIndex < Recognizer->Poses.Num(); ++PoseIndex)
-		{
-			if (Recognizer->Poses[PoseIndex].PoseName == PoseName)
-				return PoseIndex;
-		}
-
-		return -1;
-	}
-
-	bool ReadTimedPose(UHandPoseRecognizer* Recognizer, const TCHAR** Buffer, int* PoseIndex, float* PoseMinDuration)
-	{
-		// Pose name
-		FString PoseNameRead;
-		while (FChar::IsWhitespace(**Buffer))
-			++(*Buffer);
-		while (**Buffer && **Buffer != '/' && **Buffer != ',' && !FChar::IsWhitespace(**Buffer))
-		{
-			PoseNameRead += **Buffer;
-			++(*Buffer);
-		}
-
-		// Pose index
-		int PoseIndexFound = FindPoseIndex(Recognizer, PoseNameRead);
-		if (PoseIndexFound == -1)
-		{
-			UE_LOG(LogHandPoseRecognition, Error, TEXT("Unrecognized pose called %s in %s"), *PoseNameRead, *Recognizer->GetName());
-			return false;
-		}
-
-		// Pose min duration
-		int PoseMinDurationReadMillis = 0;
-		while (FChar::IsWhitespace(**Buffer))
-			++(*Buffer);
-		if (**Buffer == '/')
-		{
-			++(*Buffer);
-
-			// We have a min duration in milliseconds
-			while (FChar::IsWhitespace(**Buffer))
-				++(*Buffer);
-			while (FChar::IsDigit(**Buffer))
-			{
-				PoseMinDurationReadMillis *= 10;
-				PoseMinDurationReadMillis += (**Buffer) - '0';
-				++(*Buffer);
-			}
-		}
-
-		// Consume end of timed pose
-		while (FChar::IsWhitespace(**Buffer))
-			++(*Buffer);
-		if (**Buffer == ',')
-		{
-			++(*Buffer);
-		}
-		else if (**Buffer)
-		{
-			UE_LOG(LogHandPoseRecognition, Error, TEXT("End of timed pose expected near '%s'"), *Buffer);
-			return false;
-		}
-
-		// Return results
-		*PoseIndex = PoseIndexFound;
-		*PoseMinDuration = PoseMinDurationReadMillis * 0.001f;
-
-		return true;
-	}
-} // namespace
-
 bool FHandGesture::ProcessEncodedGestureString(UHandPoseRecognizer* HandPoseRecognizer)
 {
-	const TCHAR* Buffer = CustomEncodedGesture.GetCharArray().GetData();
+	TCHAR const* Buffer = CustomEncodedGesture.GetCharArray().GetData();
 
 	while (Buffer && *Buffer)
 	{
@@ -95,7 +22,7 @@ bool FHandGesture::ProcessEncodedGestureString(UHandPoseRecognizer* HandPoseReco
 			return false;
 		}
 
-		TimedPoses.Add({ PoseIndex, PoseMinDuration, 0.0f, 0.0f });
+		TimedPoses.Add({PoseIndex, PoseMinDuration, 0.0f, 0.0f});
 	}
 
 	// Reset state
@@ -104,7 +31,7 @@ bool FHandGesture::ProcessEncodedGestureString(UHandPoseRecognizer* HandPoseReco
 	return true;
 }
 
-bool FHandGesture::Step(int PoseIndex, float PoseDuration, float DeltaTime, float CurrentTime, const FVector& Location, const FHandPose& Pose)
+bool FHandGesture::Step(int PoseIndex, float PoseDuration, float DeltaTime, float CurrentTime, FVector const& Location)
 {
 	// Nothing to do if there are no poses
 	if (TimedPoses.Num() == 0)
@@ -173,9 +100,11 @@ bool FHandGesture::Step(int PoseIndex, float PoseDuration, float DeltaTime, floa
 		else
 		{
 			// We also cannot be in any other pose longer than the MaxTransitionTime.
-			int NextStep = (CurrentStep + 1) % (TimedPoses.Num() + (bIsLooping ? 0 : 1));
+			auto const NextStep = (CurrentStep + 1) % (TimedPoses.Num() + (bIsLooping ? 0 : 1));
 
-			if (NextStep < TimedPoses.Num() && DurationInCurrentStep >= TimedPoses[CurrentStep].PoseMinDuration && TimedPoses[NextStep].PoseIndex == PoseIndex)
+			if (NextStep < TimedPoses.Num() &&
+				DurationInCurrentStep >= TimedPoses[CurrentStep].PoseMinDuration &&
+				TimedPoses[NextStep].PoseIndex == PoseIndex)
 			{
 				// We meet all the conditions to move forward
 				CurrentStep = NextStep;
@@ -217,21 +146,20 @@ bool FHandGesture::Step(int PoseIndex, float PoseDuration, float DeltaTime, floa
 					Reset();
 					return false;
 				}
-				else
+				if (bGestureDebugLog)
 				{
-					if (bGestureDebugLog)
-					{
-						UE_LOG(LogHandPoseRecognition, Display,
-							TEXT("   In transition for %0.2fs"),
-							DurationInTransition);
-					}
+					UE_LOG(LogHandPoseRecognition, Display,
+						TEXT("   In transition for %0.2fs"),
+						DurationInTransition);
 				}
 			}
 		}
 	}
 
 	// Checking for completion.
-	if (GestureState != EGestureState::GestureNotStarted && CurrentStep == (TimedPoses.Num() - 1) && DurationInCurrentStep >= TimedPoses[CurrentStep].PoseMinDuration)
+	if (GestureState != EGestureState::GestureNotStarted &&
+		CurrentStep == (TimedPoses.Num() - 1) &&
+		DurationInCurrentStep >= TimedPoses[CurrentStep].PoseMinDuration)
 	{
 		if (bGestureDebugLog && GestureState != EGestureState::GestureCompleted)
 		{
@@ -245,25 +173,27 @@ bool FHandGesture::Step(int PoseIndex, float PoseDuration, float DeltaTime, floa
 }
 
 float FHandGesture::ComputeTransitionTime(
-	int FirstPoseIndex /* = 0 */, PoseTimeType FirstPoseType /* = PoseLastTime */,
-	int SecondPoseIndex /* = -1 */, PoseTimeType SecondPoseType /* = PoseFirstTime */) const
+	int FirstPoseIndex /* = 0 */, EPoseTimeType FirstPoseType /* = PoseLastTime */,
+	int SecondPoseIndex /* = -1 */, EPoseTimeType SecondPoseType /* = PoseFirstTime */) const
 {
-	int NumPoses = TimedPoses.Num();
+	auto const NumPoses = TimedPoses.Num();
 
 	if (SecondPoseIndex == -1)
 	{
 		SecondPoseIndex = TimedPoses.Num() - 1;
 	}
 
-	if (FirstPoseIndex < 0 || FirstPoseIndex >= NumPoses || SecondPoseIndex < 0 || SecondPoseIndex >= NumPoses || FirstPoseIndex >= SecondPoseIndex)
+	if (FirstPoseIndex < 0 || FirstPoseIndex >= NumPoses ||
+		SecondPoseIndex < 0 || SecondPoseIndex >= NumPoses ||
+		FirstPoseIndex >= SecondPoseIndex)
 	{
 		return 0.0f;
 	}
 
-	float FirstTime = FirstPoseType == PoseFirstTime ? TimedPoses[FirstPoseIndex].StepFirstTime : TimedPoses[FirstPoseIndex].StepLastTime;
-	float SecondTime = SecondPoseType == PoseFirstTime ? TimedPoses[SecondPoseIndex].StepFirstTime : TimedPoses[SecondPoseIndex].StepLastTime;
+	auto const FirstTime = FirstPoseType == PoseFirstTime ? TimedPoses[FirstPoseIndex].StepFirstTime : TimedPoses[FirstPoseIndex].StepLastTime;
+	auto const SecondTime = SecondPoseType == PoseFirstTime ? TimedPoses[SecondPoseIndex].StepFirstTime : TimedPoses[SecondPoseIndex].StepLastTime;
 
-	float Duration = SecondTime - FirstTime;
+	auto const Duration = SecondTime - FirstTime;
 	return Duration < 0.0f ? 0.0f : Duration;
 }
 
@@ -280,7 +210,7 @@ void FHandGesture::Reset(bool Force /* = false */)
 		GestureEndLocation.Set(0, 0, 0);
 		DirectionBufferingFactor = 0.75f;
 
-		for (FHandGestureStep& TimedPose : TimedPoses)
+		for (auto& TimedPose : TimedPoses)
 		{
 			TimedPose.StepFirstTime = 0.0f;
 			TimedPose.StepLastTime = 0.0f;
@@ -288,30 +218,30 @@ void FHandGesture::Reset(bool Force /* = false */)
 	}
 }
 
-void FHandGesture::DumpGestureState(int GestureIndex, const UHandPoseRecognizer* HandPoseRecognizer) const
+void FHandGesture::DumpGestureState(int GestureIndex, UHandPoseRecognizer const* HandPoseRecognizer) const
 {
 	FString StateString;
 	switch (GestureState)
 	{
-		case EGestureState::GestureNotStarted:
-			StateString = TEXT("NotStarted");
-			break;
-		case EGestureState::GestureInProgress:
-			StateString = TEXT("InProgress");
-			break;
-		case EGestureState::GestureCompleted:
-			StateString = TEXT("Completed");
-			break;
+	case EGestureState::GestureNotStarted:
+		StateString = TEXT("NotStarted");
+		break;
+	case EGestureState::GestureInProgress:
+		StateString = TEXT("InProgress");
+		break;
+	case EGestureState::GestureCompleted:
+		StateString = TEXT("Completed");
+		break;
 	}
 
 	UE_LOG(LogHandPoseRecognition, Display, TEXT("Gesture %s[%d] %s"), *GestureName, GestureIndex, *StateString);
 	UE_LOG(LogHandPoseRecognition, Display, TEXT("Duration %05.3f Transition %05.3f"), DurationInCurrentStep, DurationInTransition);
 
-	int Step = 0;
-	for (const FHandGestureStep& TimedPose : TimedPoses)
+	auto Step = 0;
+	for (auto const& TimedPose : TimedPoses)
 	{
 		UE_LOG(LogHandPoseRecognition, Display, TEXT(" %c %d %8s[%d] %05.3f - %05.3f"),
-			CurrentStep == Step ? '>' : ' ', Step,
+			CurrentStep==Step ? TEXT('>') : TEXT(' '), Step,
 			*(HandPoseRecognizer->Poses[TimedPose.PoseIndex].PoseName),
 			TimedPose.PoseIndex,
 			TimedPose.StepFirstTime,
@@ -319,4 +249,84 @@ void FHandGesture::DumpGestureState(int GestureIndex, const UHandPoseRecognizer*
 
 		Step++;
 	}
+}
+
+int FHandGesture::FindPoseIndex(UHandPoseRecognizer* Recognizer, FString const& PoseName)
+{
+	for (auto PoseIndex = 0; PoseIndex < Recognizer->Poses.Num(); ++PoseIndex)
+	{
+		if (Recognizer->Poses[PoseIndex].PoseName == PoseName)
+		{
+			return PoseIndex;
+		}
+	}
+
+	return -1;
+}
+
+bool FHandGesture::ReadTimedPose(UHandPoseRecognizer* Recognizer, TCHAR const** Buffer, int* PoseIndex, float* PoseMinDuration)
+{
+	// Pose name
+	FString PoseNameRead;
+	while (FChar::IsWhitespace(**Buffer))
+	{
+		++(*Buffer);
+	}
+	while (**Buffer && **Buffer != '/' && **Buffer != ',' && !FChar::IsWhitespace(**Buffer))
+	{
+		PoseNameRead += **Buffer;
+		++(*Buffer);
+	}
+
+	// Pose index
+	auto const PoseIndexFound = FindPoseIndex(Recognizer, PoseNameRead);
+	if (PoseIndexFound == -1)
+	{
+		UE_LOG(LogHandPoseRecognition, Error, TEXT("Unrecognized pose called %s in %s"), *PoseNameRead, *Recognizer->GetName());
+		return false;
+	}
+
+	// Pose min duration
+	auto PoseMinDurationReadMillis = 0;
+	while (FChar::IsWhitespace(**Buffer))
+	{
+		++(*Buffer);
+	}
+	if (**Buffer == '/')
+	{
+		++(*Buffer);
+
+		// We have a min duration in milliseconds
+		while (FChar::IsWhitespace(**Buffer))
+		{
+			++(*Buffer);
+		}
+		while (FChar::IsDigit(**Buffer))
+		{
+			PoseMinDurationReadMillis *= 10;
+			PoseMinDurationReadMillis += (**Buffer) - '0';
+			++(*Buffer);
+		}
+	}
+
+	// Consume end of timed pose
+	while (FChar::IsWhitespace(**Buffer))
+	{
+		++(*Buffer);
+	}
+	if (**Buffer == ',')
+	{
+		++(*Buffer);
+	}
+	else if (**Buffer)
+	{
+		UE_LOG(LogHandPoseRecognition, Error, TEXT("End of timed pose expected near '%s'"), *Buffer);
+		return false;
+	}
+
+	// Return results
+	*PoseIndex = PoseIndexFound;
+	*PoseMinDuration = PoseMinDurationReadMillis * 0.001f;
+
+	return true;
 }

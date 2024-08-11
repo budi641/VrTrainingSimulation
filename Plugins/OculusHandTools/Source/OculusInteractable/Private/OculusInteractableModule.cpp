@@ -1,8 +1,14 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "OculusInteractableModule.h"
 
 #define LOCTEXT_NAMESPACE "FOculusInteractableModule"
+
+#include "OculusDeveloperTelemetry.h"
+
+OCULUS_TELEMETRY_LOAD_MODULE("Unreal-OculusInteractable");
+
+DEFINE_LOG_CATEGORY(LogInteractable);
 
 void FOculusInteractableModule::StartupModule()
 {

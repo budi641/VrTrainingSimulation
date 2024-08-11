@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -30,13 +30,16 @@ public:
 private:
 	UPROPERTY()
 	class UArrowComponent* ArrowComponent;
-
 public:
 #endif
 
 	/** Initial activation state of the selector. */
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
 	bool bSelectorStartsActivated;
+
+	/** Radius of near-field selection around the selector.  Disabled if <= 0.0. */
+	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
+	float NearFieldRadius;
 
 	/** Distance from selector at which we start raycasting. */
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
@@ -58,7 +61,7 @@ public:
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
 	bool bAlignAimingActorWithHitNormal;
 
-	/** Aiming actor placed at targeting location. */
+	/** Aiming actor placed at targetting location. */
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
 	AAimingActor* AimingActor;
 
@@ -72,6 +75,10 @@ public:
 
 	/** Aiming actor rotation rate. */
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
+	bool bAlwaysShowAimingActor = false;
+
+	/** Aiming actor rotation rate. */
+	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
 	float AimingActorRotationRate;
 
 	/** Aiming using a number of samples for stabilization. */
@@ -82,6 +89,9 @@ public:
 	UPROPERTY(Category = "Selector", EditAnywhere, BlueprintReadWrite)
 	bool bRaycastDebugTrace;
 
+	UFUNCTION(Category = "Selector", BlueprintNativeEvent)
+	bool ShouldSelect(AInteractable* Interactable) const;
+
 	/**
 	 * Call to activate / deactivate the selector.
 	 * @param Activate - A boolean.
@@ -91,17 +101,18 @@ public:
 
 	/**
 	 * Access to the currently selected interactable actor.
+	 * @param SelectedInNearField - When the return value is not null, indicates if selected in near field.
 	 * @return AInteractable or nullptr if none is selected.
 	 */
 	UFUNCTION(BlueprintCallable)
-	AInteractable* GetSelectedInteractable();
+	AInteractable* GetSelectedInteractable(bool& SelectedInNearField) const;
 
 	/**
 	 * Access any non-interactable actor hit by the selector.
 	 * @return AActor or nullptr if none is selected.
 	 */
 	UFUNCTION(BlueprintCallable)
-	AActor* GetNonInteractableHit();
+	AActor* GetNonInteractableHit() const;
 
 	/** Called every frame. */
 	virtual void Tick(float DeltaTime) override;
@@ -121,16 +132,23 @@ protected:
 
 	/**
 	 * Updates DampenedForwardVector.
-	 * @param DampeningFactor - Fraction of the current vector to keep.
+	 * @param Dampening - Fraction of the current vector to keep.
 	 */
-	void UpdateDampenedForwardVector(float DampeningFactor);
+	void UpdateDampenedForwardVector(float Dampening);
 
 	/**
-	 * Computes the current start and end locations for the selector.
+	 * Computes the current start and end locations for the near-field selector.
 	 * @param Start - Where to store the start location.
 	 * @param End - Where to store the end location.
 	 */
-	void ComputeRaycastEndpoints(FVector& Start, FVector& End) const;
+	void ComputeNearFieldRaycastEndpoints(FVector& Start, FVector& End) const;
+
+	/**
+	 * Computes the current start and end locations for the far-field selector.
+	 * @param Start - Where to store the start location.
+	 * @param End - Where to store the end location.
+	 */
+	void ComputeFarFieldRaycastEndpoints(FVector& Start, FVector& End) const;
 
 	/**
 	 * Computes the radius of the sphere required to hit at RaycastDistance and RaycastAngle.
@@ -146,8 +164,15 @@ protected:
 	 */
 	float ComputeAngularDistance(AActor* Target) const;
 
-	/** AInteractable */
-	AInteractable* SelectedInteractable;
+	/** Candidate in pre-selection, when object has a FarFieldSelectionDelay > 0.0. */
+	UPROPERTY() AInteractable* CandidatePreSelection;
+	float CandidatePreSelectionTimeMs;
+
+	/** Interactable selected. */
+	UPROPERTY() AInteractable* SelectedInteractable;
+
+	/** Interactable is in near-field. */
+	bool SelectedInteractableInNearField;
 
 	/** If we hit a non-interactable object, we keep a reference to it. */
 	TWeakObjectPtr<AActor> NonInteractableActorHit;
@@ -155,15 +180,17 @@ protected:
 	/**
 	 * Implements changes of target.
 	 * @param Candidate - An interactable actor.
+	 * @param SelectionDurationMs - How long the candidate has been under selection in milliseconds.
 	 * @param Notify - Whether we should notify the old and/or new selections.
+	 * @param CandidateInNearField - Whether the selected interactable
 	 */
-	void SetSelectedInteractable(AInteractable* Candidate, bool Notify = true);
+	void SetSelectedInteractable(AInteractable* Candidate, float SelectionDurationMs = 0.0f, bool Notify = true, bool CandidateInNearField = false);
 
 	/**
 	 * Call to change the activation of the aiming actor.
 	 * @param Activate - New activation state.
 	 */
-	void ActivateAimingActor(bool Activate);
+	void ActivateAimingActor(bool Activate) const;
 
 	/** Do we own the aiming actor? */
 	bool bAimingActorOwned;
@@ -175,13 +202,13 @@ protected:
 	void DestroyAimingActor();
 
 	/**
-	 * Call to change the beam activation.
-	 * @param Activate - New activation state.
+	 * Call to target the beam at an actor.
+	 * @param Target - Actor to target the beam to, or nullptr to deactivate.
 	 */
-	void ActivateBeam(bool Activate);
+	void TargetBeam(AActor* Target);
 
 	/** Updates the beam start tangent. */
-	void OrientBeam();
+	void OrientBeam() const;
 
 	/** Constructs the selection beam, if a template was provided. */
 	void BuildBeam();
@@ -190,5 +217,10 @@ protected:
 	void DestroyBeam();
 
 	/** The beam particle system component created based on the BeatTemplate particle system. */
-	UParticleSystemComponent* Beam;
+	UPROPERTY() UParticleSystemComponent* Beam;
+
+private:
+	static ECollisionChannel InteractableTraceChannel;
+	static FName BeamSource;
+	static FName BeamTarget;
 };

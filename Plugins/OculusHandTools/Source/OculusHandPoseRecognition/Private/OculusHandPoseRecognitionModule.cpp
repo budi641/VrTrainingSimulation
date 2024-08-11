@@ -1,10 +1,14 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "OculusHandPoseRecognitionModule.h"
 
 #define LOCTEXT_NAMESPACE "FOculusHandPoseRecognitionModule"
 
 DEFINE_LOG_CATEGORY(LogHandPoseRecognition);
+
+#include "OculusDeveloperTelemetry.h"
+
+OCULUS_TELEMETRY_LOAD_MODULE("Unreal-OculusHandPoseRecognition");
 
 void FOculusHandPoseRecognitionModule::StartupModule()
 {

@@ -1,23 +1,21 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include "InteractableSelector.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/GameplayStatics.h"
 
-namespace // local
-{
-	ECollisionChannel InteractableTraceChannel = ECollisionChannel::ECC_GameTraceChannel1;
-	FName BeamSource("Source");
-	FName BeamTarget("Target");
-} // namespace
+ECollisionChannel AInteractableSelector::InteractableTraceChannel = ECC_GameTraceChannel1;
+FName AInteractableSelector::BeamSource("Source");
+FName AInteractableSelector::BeamTarget("Target");
 
 AInteractableSelector::AInteractableSelector()
 {
 	// Property defaults
 	bSelectorStartsActivated = false;
+	NearFieldRadius = 10.0f;
 	RaycastOffset = 0.0f;
 	RaycastDistance = 1000.0f;
-	RaycastAngleDegrees = 10.0f;
+	RaycastAngleDegrees = 15.0f;
 	RaycastStickinessAngleDegrees = 20.0f;
 	DampeningFactor = 0.95f;
 	AimingActorRotationRate = 0.1f;
@@ -27,6 +25,8 @@ AInteractableSelector::AInteractableSelector()
 	bAlignAimingActorWithHitNormal = false;
 	bSelectorActivated = false;
 	bAimingActorOwned = false;
+	CandidatePreSelection = nullptr;
+	CandidatePreSelectionTimeMs = 0.0f;
 	SelectedInteractable = nullptr;
 
 	PrimaryActorTick.bCanEverTick = true;
@@ -63,7 +63,7 @@ void AInteractableSelector::BeginPlay()
 	}
 }
 
-void AInteractableSelector::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void AInteractableSelector::EndPlay(EEndPlayReason::Type const EndPlayReason)
 {
 	ActivateSelector(false);
 	DestroyBeam();
@@ -77,101 +77,154 @@ void AInteractableSelector::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	auto TestShouldSelect = [this](TWeakObjectPtr<AActor> Actor)
+	{
+		return ShouldSelect(Cast<AInteractable>(Actor.Get()));
+	};
+
 	if (bSelectorActivated)
 	{
-		UWorld* World = GetWorld();
+		auto const World = GetWorld();
 		if (!World)
+		{
 			return;
-
-		UpdateDampenedForwardVector(DampeningFactor);
-
-		FVector StartCast, EndCast;
-		ComputeRaycastEndpoints(StartCast, EndCast);
-		if (bRaycastDebugTrace)
-		{
-			DrawDebugLine(World, StartCast, EndCast, FColor::Green, false, -1.0f, 0, 0.1f);
 		}
 
-		// Do not change the selection if it is within some angle.
-		if (SelectedInteractable != nullptr)
-		{
-			float AngleToCurrentSelection = ComputeAngularDistance(SelectedInteractable);
-			if (AngleToCurrentSelection <= RaycastStickinessAngleDegrees)
-			{
-				// Re-orient the beam.
-				OrientBeam();
-				return;
-			}
-		}
-
-		// Trace in a cone against interactable.
-		float SphereRadius = ComputeSphereRadiusForCast();
-		FCollisionShape CollisionSphere = FCollisionShape::MakeSphere(SphereRadius);
-		TArray<FHitResult> Hits;
-		World->SweepMultiByChannel(Hits, StartCast, EndCast, FQuat::Identity, InteractableTraceChannel, CollisionSphere);
-
-		// Looking for the closest candidate by angle and distance.
 		AInteractable* Candidate = nullptr;
-		float CandidateAngle = RaycastAngleDegrees;
-		float CandidateDistance = RaycastDistance;
+		auto CandidateInNearField = false;
+		FVector StartCast, EndCast;
+		ComputeNearFieldRaycastEndpoints(StartCast, EndCast);
+		TArray<FHitResult> Hits;
 
-		if (Hits.Num() > 0)
+		auto UpdateAimingActorTransform = [&]
 		{
-			for (const FHitResult& Hit : Hits)
+			World->LineTraceMultiByChannel(Hits, StartCast, EndCast, ECC_Visibility);
+
+			auto const AimingQuat = AimingActor->GetActorQuat();
+
+			// Default target aiming when we have not hit normal.
+			auto const RightVector = FVector::CrossProduct(DampenedForwardVector, FVector::UpVector);
+			auto ForwardVector = FVector::CrossProduct(StartCast - EndCast, RightVector);
+			auto TargetAimingQuat = FQuat(FRotationMatrix::MakeFromXZ(ForwardVector, StartCast - EndCast).Rotator());
+
+			if (Hits.Num() > 0)
 			{
-				// UE_LOG(LogTemp, Error, TEXT("Hit %s at %0.0f"), *Hit.Actor->GetName(), Hit.Distance);
-				if (Hit.GetActor() && Hit.GetActor()->GetClass()->IsChildOf(AInteractable::StaticClass()))
+				NonInteractableActorHit = Hits[0].GetActor();
+
+				if (bAlignAimingActorWithHitNormal)
 				{
-					float Angle = ComputeAngularDistance(Hit.GetActor());
+					// Align with hit normal.
+					ForwardVector = FVector::CrossProduct(Hits[0].ImpactNormal, RightVector);
+					TargetAimingQuat = FQuat(FRotationMatrix::MakeFromXZ(ForwardVector, Hits[0].ImpactNormal).Rotator());
+				}
 
-					// Since CandidateAngle starts at RaycastAngleDegrees, we cannot select outside of the cone.
-					if (Angle > CandidateAngle || (Angle == CandidateAngle && Hit.Distance >= CandidateDistance))
-						continue;
+				AimingActor->SetActorLocation(Hits[0].ImpactPoint);
+			}
+			else
+			{
+				// Place the actor at the end of the cast of nothing is hit.
+				AimingActor->SetActorLocation(EndCast);
+			}
 
-					CandidateAngle = Angle;
-					CandidateDistance = Hit.Distance;
-					Candidate = Cast<AInteractable>(Hit.GetActor());
+			auto const LerpedTargetAimingQuat = FQuat::FastLerp(AimingQuat, TargetAimingQuat, AimingActorRotationRate);
+			AimingActor->SetActorRotation(LerpedTargetAimingQuat);
+		};
+
+		// Near-field selection has priority.
+		if (NearFieldRadius > 0.0f)
+		{
+			auto const NearFieldCollisionSphere = FCollisionShape::MakeSphere(NearFieldRadius);
+			auto CandidateDistance = NearFieldRadius * 100.0f;
+
+			World->SweepMultiByChannel(Hits, StartCast, StartCast, FQuat::Identity, InteractableTraceChannel, NearFieldCollisionSphere);
+
+			if (Hits.Num() > 0)
+			{
+				for (auto const& Hit : Hits)
+				{
+					if (Hit.GetActor() && Hit.GetActor()->GetClass()->IsChildOf(AInteractable::StaticClass()) && TestShouldSelect(Hit.GetActor()))
+					{
+						auto const Distance = FVector::Distance(Hit.GetActor()->GetActorLocation(), StartCast);
+						if (CandidateDistance > Distance)
+						{
+							CandidateDistance = Distance;
+							Candidate = Cast<AInteractable>(Hit.GetActor());
+							CandidateInNearField = true;
+						}
+					}
+
+					// UE_LOG(LogTemp, Error, TEXT("Hit near field %s at %0.0f"), *Hit.GetActor()->GetName(), CandidateDistance);
 				}
 			}
 		}
 
-		if (Candidate == nullptr)
+		// If no candidates found in the near-field, we perform far-field selection.
+		if (!Candidate)
+		{
+			UpdateDampenedForwardVector(DampeningFactor);
+			ComputeFarFieldRaycastEndpoints(StartCast, EndCast);
+
+			if (bRaycastDebugTrace)
+			{
+				DrawDebugLine(World, StartCast, EndCast, FColor::Green, false, -1.0f, 0, 0.1f);
+			}
+
+			// Trace in a cone against interactable.
+			auto const SphereRadius = ComputeSphereRadiusForCast();
+			auto const CollisionSphere = FCollisionShape::MakeSphere(SphereRadius);
+			World->SweepMultiByChannel(Hits, StartCast, EndCast, FQuat::Identity, InteractableTraceChannel, CollisionSphere);
+
+			// Looking for the closest candidate by angle and distance.
+			auto CandidateAngle = RaycastAngleDegrees;
+			auto CandidateDistance = RaycastDistance;
+
+			if (Hits.Num() > 0)
+			{
+				for (auto const& Hit : Hits)
+				{
+					// GEngine->AddOnScreenDebugMessage(-1, 0, FColor::Blue, FString::Printf(TEXT("Hit %s at %f"), *Hit.GetActor()->GetName(), Hit.Distance));
+					if (Hit.GetActor() && Hit.GetActor()->GetClass()->IsChildOf(AInteractable::StaticClass()) && TestShouldSelect(Hit.GetActor()))
+					{
+						auto const Angle = ComputeAngularDistance(Hit.GetActor());
+
+						// Since CandidateAngle starts at RaycastAngleDegrees, we cannot select outside of the cone.
+						if (Angle > CandidateAngle || Angle == CandidateAngle && Hit.Distance >= CandidateDistance)
+						{
+							continue;
+						}
+
+						CandidateAngle = Angle;
+						CandidateDistance = Hit.Distance;
+						Candidate = Cast<AInteractable>(Hit.GetActor());
+					}
+				}
+			}
+
+			// Do not change the selection if it is within some angle.
+			if (SelectedInteractable != nullptr && Candidate != nullptr)
+			{
+				auto const AngleToCurrentSelection = ComputeAngularDistance(SelectedInteractable);
+				if (AngleToCurrentSelection <= RaycastStickinessAngleDegrees &&
+					AngleToCurrentSelection < ComputeAngularDistance(Candidate))
+				{
+					// Re-orient the beam.
+					OrientBeam();
+					if (bAlwaysShowAimingActor)
+					{
+						UpdateAimingActorTransform();
+					}
+					return;
+				}
+			}
+		}
+
+		if (!Candidate || bAlwaysShowAimingActor)
 		{
 			if (AimingActor)
 			{
 				// If there are no hits, we help by displaying the aiming actor.
 				ActivateAimingActor(true);
-
-				World->LineTraceMultiByChannel(Hits, StartCast, EndCast, ECollisionChannel::ECC_Visibility);
-
-				FQuat AimingQuat = AimingActor->GetActorQuat();
-
-				// Default target aiming when we have not hit normal.
-				FVector RightVector = FVector::CrossProduct(DampenedForwardVector, FVector::UpVector);
-				FVector ForwardVector = FVector::CrossProduct(StartCast - EndCast, RightVector);
-				FQuat TargetAimingQuat = FQuat(FRotationMatrix::MakeFromXZ(ForwardVector, StartCast - EndCast).Rotator());
-
-				if (Hits.Num() > 0)
-				{
-					NonInteractableActorHit = Hits[0].GetActor();
-
-					if (bAlignAimingActorWithHitNormal)
-					{
-						// Align with hit normal.
-						ForwardVector = FVector::CrossProduct(Hits[0].ImpactNormal, RightVector);
-						TargetAimingQuat = FQuat(FRotationMatrix::MakeFromXZ(ForwardVector, Hits[0].ImpactNormal).Rotator());
-					}
-
-					AimingActor->SetActorLocation(Hits[0].ImpactPoint);
-				}
-				else
-				{
-					// Place the actor at the end of the cast of nothing is hit.
-					AimingActor->SetActorLocation(EndCast);
-				}
-
-				FQuat LerpedTargetAimingQuat = FQuat::FastLerp(AimingQuat, TargetAimingQuat, AimingActorRotationRate);
-				AimingActor->SetActorRotation(LerpedTargetAimingQuat);
+				UpdateAimingActorTransform();
 			}
 		}
 		else
@@ -183,56 +236,92 @@ void AInteractableSelector::Tick(float DeltaTime)
 			NonInteractableActorHit.Reset();
 		}
 
-		SetSelectedInteractable(Candidate);
+		// Near-field selection is immediate.  , otherwise we update selection time on candidate in pre-selection.
+		if (CandidateInNearField)
+		{
+			CandidatePreSelection = Candidate;
+			CandidatePreSelectionTimeMs = Candidate->FarFieldSelectionDelayMs;
+		}
+		else if (CandidatePreSelection != Candidate)
+		{
+			CandidatePreSelection = Candidate;
+			CandidatePreSelectionTimeMs = 0.0f;
+		}
+		else
+		{
+			CandidatePreSelectionTimeMs += DeltaTime * 1000.0f;
+		}
+
+		SetSelectedInteractable(CandidatePreSelection, CandidatePreSelectionTimeMs, true, CandidateInNearField);
 	}
 }
 
-void AInteractableSelector::SetSelectedInteractable(AInteractable* Candidate, bool Notify /* = true */)
+void AInteractableSelector::SetSelectedInteractable(AInteractable* Candidate, float SelectionDurationMs /* = 0.0f */, bool Notify /* = true */, bool CandidateInNearField /* = false */)
 {
+	auto const SameCandidate = SelectedInteractable == Candidate;
+	auto const SameField = SelectedInteractableInNearField == CandidateInNearField;
+
 	// Old interactable.
 	if (SelectedInteractable)
 	{
-		if (SelectedInteractable == Candidate)
+		if (SameCandidate)
 		{
-			// Same non-null target, we only need to update the beam orientation.
-			OrientBeam();
-			return;
-		}
+			// Same non-null target in the same field: just need to update beam orientation.
+			if (SameField)
+			{
+				if (!CandidateInNearField)
+				{
+					OrientBeam();
+				}
 
-		if (Notify)
+				return;
+			}
+		}
+		else
 		{
-			SelectedInteractable->EndSelection(this);
+			if (Notify)
+			{
+				SelectedInteractable->EndSelection(this);
+			}
 		}
 	}
 
+	// Activating beam on the candidate.
+	TargetBeam(CandidateInNearField ? nullptr : Candidate);
+
 	// Swapping to candidate.
-	SelectedInteractable = Candidate;
-
-	// New interactable (potentially nullptr).
-	if (SelectedInteractable)
+	if (Candidate && Candidate->FarFieldSelectionDelayMs <= SelectionDurationMs)
 	{
-		ActivateBeam(true);
-
-		if (Notify)
-		{
-			SelectedInteractable->BeginSelection(this);
-		}
+		SelectedInteractable = Candidate;
+		SelectedInteractableInNearField = CandidateInNearField;
 	}
 	else
 	{
-		ActivateBeam(false);
+		SelectedInteractable = nullptr;
+	}
+
+	// New interactable (potentially nullptr).
+	if (SelectedInteractable && !SameCandidate && Notify)
+	{
+		SelectedInteractable->BeginSelection(this);
 	}
 }
 
-AInteractable* AInteractableSelector::GetSelectedInteractable()
+AInteractable* AInteractableSelector::GetSelectedInteractable(bool& SelectedInNearField) const
 {
+	SelectedInNearField = SelectedInteractableInNearField;
 	return SelectedInteractable;
 }
 
-AActor* AInteractableSelector::GetNonInteractableHit()
+AActor* AInteractableSelector::GetNonInteractableHit() const
 {
 	// Can return null.
 	return NonInteractableActorHit.Get();
+}
+
+bool AInteractableSelector::ShouldSelect_Implementation(AInteractable* Interactable) const
+{
+	return true;
 }
 
 void AInteractableSelector::ActivateSelector(bool Activate)
@@ -260,10 +349,18 @@ void AInteractableSelector::UpdateDampenedForwardVector(float Dampening)
 	DampenedForwardVector.Normalize();
 }
 
-void AInteractableSelector::ComputeRaycastEndpoints(FVector& Start, FVector& End) const
+void AInteractableSelector::ComputeNearFieldRaycastEndpoints(FVector& Start, FVector& End) const
 {
-	FVector ActorPos = GetActorLocation();
-	FVector ActorFwd = DampenedForwardVector;
+	auto const ActorPos = GetActorLocation();
+	auto const ActorFwd = GetActorForwardVector();
+	Start = ActorPos - ActorFwd * NearFieldRadius;
+	End = ActorPos + ActorFwd * NearFieldRadius;
+}
+
+void AInteractableSelector::ComputeFarFieldRaycastEndpoints(FVector& Start, FVector& End) const
+{
+	auto const ActorPos = GetActorLocation();
+	auto const ActorFwd = DampenedForwardVector;
 	Start = ActorPos + ActorFwd * RaycastOffset;
 	End = ActorPos + ActorFwd * (RaycastOffset + RaycastDistance);
 }
@@ -275,25 +372,27 @@ float AInteractableSelector::ComputeSphereRadiusForCast() const
 
 float AInteractableSelector::ComputeAngularDistance(AActor* Target) const
 {
-	FVector LineStart = GetActorLocation();
-	FVector LineEnd = GetActorLocation() + 100.0f * DampenedForwardVector; // Any point will do, but projecting forward will reduce errors.
-	FVector TargetLocation = Target->GetActorLocation();
+	auto const LineStart = GetActorLocation();
+	auto const LineEnd = GetActorLocation() + 100.0f * DampenedForwardVector; // Any point will do, but projecting forward will reduce errors.
+	auto const TargetLocation = Target->GetActorLocation();
 
-	FVector NearestLocation = FMath::ClosestPointOnInfiniteLine(LineStart, LineEnd, TargetLocation);
+	auto const NearestLocation = FMath::ClosestPointOnInfiniteLine(LineStart, LineEnd, TargetLocation);
 
-	float DistNearestToUs = FVector::Distance(NearestLocation, LineStart);
-	float DistNearestToTargetCenter = FVector::Distance(NearestLocation, TargetLocation);
-	float DistNearestToTarget = FMath::Max(DistNearestToTargetCenter - (Target->GetSimpleCollisionRadius() * 0.5f), 0.0f);
+	auto const DistNearestToUs = FVector::Distance(NearestLocation, LineStart);
+	auto const DistNearestToTargetCenter = FVector::Distance(NearestLocation, TargetLocation);
+	auto const DistNearestToTarget = FMath::Max(DistNearestToTargetCenter - Target->GetSimpleCollisionRadius() * 0.5f, 0.0f);
 
-	float AngleToTargetRadians = FMath::FastAsin(DistNearestToTarget / DistNearestToUs);
+	auto const AngleToTargetRadians = FMath::FastAsin(DistNearestToTarget / DistNearestToUs);
 
 	return FMath::RadiansToDegrees(AngleToTargetRadians);
 }
 
-void AInteractableSelector::ActivateAimingActor(bool Activate)
+void AInteractableSelector::ActivateAimingActor(bool Activate) const
 {
 	if (!AimingActor)
+	{
 		return;
+	}
 
 	if (Activate)
 	{
@@ -311,11 +410,15 @@ void AInteractableSelector::BuildAimingActor()
 {
 	// Minimum handling of multiplayer: don't spawn aiming actor if we are not on the server.
 	if (!HasAuthority())
+	{
 		return;
+	}
 
-	UWorld* World = GetWorld();
+	auto World = GetWorld();
 	if (!World)
+	{
 		return;
+	}
 
 	if (!AimingActor && AimingActorClass)
 	{
@@ -325,8 +428,8 @@ void AInteractableSelector::BuildAimingActor()
 		Params.Owner = this;
 
 		// Spawn actor of desired class.
-		FVector Location = GetActorLocation();
-		FRotator Rotation = GetActorRotation();
+		auto Location = GetActorLocation();
+		auto Rotation = GetActorRotation();
 		AimingActor = Cast<AAimingActor>(World->SpawnActor(AimingActorClass, &Location, &Rotation, Params));
 
 		if (!AimingActor)
@@ -346,9 +449,11 @@ void AInteractableSelector::BuildAimingActor()
 
 void AInteractableSelector::DestroyAimingActor()
 {
-	UWorld* World = GetWorld();
+	auto World = GetWorld();
 	if (!World)
+	{
 		return;
+	}
 
 	if (bAimingActorOwned && AimingActor->HasAuthority() && IsValid(AimingActor) && !AimingActor->IsUnreachable())
 	{
@@ -358,21 +463,17 @@ void AInteractableSelector::DestroyAimingActor()
 	}
 }
 
-void AInteractableSelector::ActivateBeam(bool Activate)
+void AInteractableSelector::TargetBeam(AActor* Target)
 {
 	if (!Beam)
-		return;
-
-	if (Activate && SelectedInteractable == nullptr)
 	{
-		UE_LOG(LogTemp, Error, TEXT("The beam should not be activated when there are no interactable selected."));
-		Activate = false;
+		return;
 	}
 
-	if (Activate)
+	if (Target)
 	{
 		Beam->SetActorParameter(BeamSource, this);
-		Beam->SetActorParameter(BeamTarget, SelectedInteractable);
+		Beam->SetActorParameter(BeamTarget, Target);
 		Beam->SetComponentTickEnabled(true);
 		Beam->SetHiddenInGame(false);
 		OrientBeam();
@@ -384,11 +485,11 @@ void AInteractableSelector::ActivateBeam(bool Activate)
 	}
 }
 
-void AInteractableSelector::OrientBeam()
+void AInteractableSelector::OrientBeam() const
 {
 	if (Beam)
 	{
-		FVector BeamTangent = DampenedForwardVector;
+		auto const BeamTangent = DampenedForwardVector;
 		// UE_LOG(LogTemp, Error, TEXT("*** BEAM UPDATE %0.2f %0.2f %0.2f"), DampenedForwardVector.X, DampenedForwardVector.Y, DampenedForwardVector.Z);
 		Beam->SetBeamSourceTangent(0, BeamTangent, 0);
 	}
@@ -399,7 +500,7 @@ void AInteractableSelector::BuildBeam()
 	if (BeamTemplate)
 	{
 		Beam = UGameplayStatics::SpawnEmitterAttached(BeamTemplate, this->GetRootComponent());
-		ActivateBeam(false);
+		TargetBeam(nullptr);
 	}
 }
 

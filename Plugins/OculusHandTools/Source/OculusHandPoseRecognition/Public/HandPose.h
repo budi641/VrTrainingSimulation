@@ -1,4 +1,4 @@
-// Copyright (c) Facebook Technologies, LLC and its affiliates.  All rights reserved.
+// Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #pragma once
 
@@ -8,7 +8,7 @@
 
 /** Bones that we care about. */
 UENUM()
-enum RecognizedBone
+enum ERecognizedBone
 {
 	Thumb_0 = 0,
 	Thumb_1,
@@ -35,7 +35,7 @@ enum RecognizedBone
 USTRUCT(BlueprintType)
 struct OCULUSHANDPOSERECOGNITION_API FHandPose
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 public:
 	/** Name for this pose. */
@@ -70,9 +70,19 @@ public:
 	 * @param Bone
 	 * @return A const reference to the rotator of that bone.
 	 */
-	const FRotator& GetRotator(RecognizedBone Bone) const
+	const FRotator& GetRotator(ERecognizedBone Bone) const
 	{
 		return Rotations[Bone];
+	}
+
+	/**
+	* Weight access.
+	* @param Bone
+	* @return The weight of the given bone.
+	*/
+	float GetWeight(ERecognizedBone Bone) const
+	{
+		return Weights[Bone];
 	}
 
 	/**
@@ -113,7 +123,7 @@ public:
 	/**
 	 * Used to record the minimum bone angles.
 	 * Copies all pitch/yaw/roll angles from Other that are smaller that our current ones.
-	 * @param Other - Hand pose.
+ 	 * @param Other - Hand pose.
 	 */
 	void Min(const FHandPose& Other);
 
@@ -126,11 +136,21 @@ public:
 
 protected:
 	/** Hand side that will be set during parsing. */
-	EOculusXRHandType Hand;
+	EOculusXRHandType Hand = EOculusXRHandType::None;
 
 	/** Hand bone rotators. */
-	FRotator Rotations[RecognizedBone::NUM];
+	FRotator Rotations[NUM];
 
 	/** Hand bone weights. */
-	float Weights[RecognizedBone::NUM];
+	float Weights[NUM] = {};
+
+private:
+	static int NormalizedOutputAngle(float Angle);
+	static FString FmtRot(FString Prefix, FRotator R);
+	static void SkipWhitespace(const TCHAR** Buffer);
+	static bool ReadRotComp(const TCHAR** Buffer, double* RotComp);
+	static bool ReadWeight(const TCHAR** Buffer, float* Weight);
+	static bool ReadRot(const TCHAR** Buffer, const TCHAR* Prefix, FRotator& R, float& Weight);
+	static float ComputeAngleError(float Ref, float Angle);
+	static float RotError(ERecognizedBone Bone, const FRotator* RefRot, const float* RefWeight, const FRotator* OtherRot);
 };
